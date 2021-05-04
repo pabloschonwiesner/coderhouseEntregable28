@@ -3,10 +3,11 @@ const exphbs = require('express-handlebars')
 const session = require('express-session')
 const passport = require('passport')
 const FacebookStrategy = require('passport-facebook').Strategy
-const bcrypt = require('bcrypt')
+require('dotenv').config()
 const MongoStore = require('connect-mongo')
 const mongoose = require('mongoose')
 const Usuario = require('./models/usuario.model')
+const { fork } = require('child_process')
 
 const ProductoServicio = require('./services/producto.service')
 const UsuarioServicio = require('./services/usuario.service')
@@ -14,6 +15,38 @@ const UsuarioServicio = require('./services/usuario.service')
 const app = express()
 let productoServicio = new ProductoServicio()
 const usuarioServicio = new UsuarioServicio()
+
+let facebookId, facebookSecret, port, arrObj = []
+
+process.argv.forEach( arg => {
+  let arrArg = arg.split('=')
+  arrObj.push({ clave: arrArg[0], valor: arrArg[1]})
+})
+
+let findFacebookId = arrObj.find( item => item.clave.toLowerCase() == 'facebookid')
+let findFacebookSecret = arrObj.find( item => item.clave.toLowerCase() == 'facebooksecret')
+let findPort = arrObj.find( item => item.clave.toLowerCase() == 'port')
+
+if( findFacebookId ) {
+  facebookId = findFacebookId.valor
+} else {
+  facebookId = process.env.FACEBOOK_CLIENT_ID
+}
+
+if( findFacebookSecret ) {
+  facebookSecret = findFacebookSecret.valor
+} else {
+  facebookSecret = process.env.FACEBOOK_CLIENT_SECRET
+}
+
+if( findPort ) {
+  port = findPort.valor
+} else {
+  port = process.env.PORT
+}
+
+console.log(process)
+
 
 app.use(session({
   secret: 'clavesecreta',
@@ -59,10 +92,12 @@ passport.deserializeUser((id, done) => {
 
 
 
+
+
 passport.use('facebook', new FacebookStrategy({
-  clientID: '471231287445799', 
-  clientSecret: 'c02e57ca527cdafee74bd96f931e65ea', 
-  callbackURL: `http://localhost:3232/auth/facebook/callback`, 
+  clientID: facebookId, 
+  clientSecret: facebookSecret, 
+  callbackURL: `http://localhost:${port}/auth/facebook/callback`, 
   profileFields: ['id', 'displayName', 'email', 'picture'] },
   async ( accessToken, refreshToken, profile, cb) => { 
     try {
@@ -112,11 +147,52 @@ app.get('/salir', (req, res) => {
   })
 })
 
+app.get('/info', (req, res) => {
+  let argumentosEntrada = []
+  for(let i = 2; i < process.argv.length; i++) {
+    argumentosEntrada.push(process.argv[i])
+  }
 
 
-app.listen(3232, () => {
-  console.log('Escuchando el puerto 3232')
-  mongoose.connect('mongodb://localhost:27017/ecommerce', {useNewUrlParser: true, useUnifiedTopology: true}, (err) => {
+  let infoProcess = {
+    argumentosEntrada: argumentosEntrada.join(', '),
+    so: process.platform,
+    versionNode: process.version,
+    usoMemoria: process.memoryUsage().rss,
+    pathEjecucion: process.execPath,
+    processId: process.pid,
+    directorioActual: process.cwd(),
+  }
+
+  res.render('process', { infoProcess } )
+})
+
+app.get('/random', (req, res) => {
+  let cantidad = req.query.cant
+
+  if(!cantidad || cantidad <= 0) {
+    cantidad = 500000000
+  }
+
+  const forked = fork('randomFork.js')
+
+  forked.on('message', resultado => {
+    return res.status(200).json(resultado)    
+  })
+
+  forked.send({cantidad})
+
+
+
+
+})
+
+console.log(process.env.PORT)
+
+
+app.listen(port, () => {
+  console.log(`Escuchando el puerto ${port}`)
+  mongoose.connect(process.env.MONGO_URL, {useNewUrlParser: true, useUnifiedTopology: true}, (err) => {
   if(err) console.log(err);
   
   console.log('Base de datos ONLINE');
